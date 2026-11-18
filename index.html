@@ -2,362 +2,96 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1e293b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>❄️ Снежная лавина</title>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-<header>
-  <h1>❄️ Снежная лавина</h1>
-  <div class="header-center">
-    <div class="clock">
-      <span id="clockTime">--:--:--</span><small id="clockDate"></small>
-    </div>
-    <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
-    <div class="progress-label" id="progressLabel">До отчёта: —</div>
+<header class="topbar">
+  <div class="header-main">
+    <span class="brand">
+      <span class="brand-icon">❄️</span>
+      <span class="brand-text">Снежная лавина</span>
+    </span>
+    <span class="clock" id="clockTime">--:--:--</span>
+    <span class="dot" id="saveDot" aria-hidden="true"></span>
   </div>
-  <div class="status-bar">
-    <div class="status-item">
-      <span class="dot" id="saveDot"></span>
-      <span id="saveText">Нет изменений</span>
-    </div>
+  <div class="header-progress">
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <span class="progress-label" id="progressLabel">До отчёта: —</span>
   </div>
 </header>
 
 <main>
-  <div class="district-picker" id="districtPicker"></div>
-  <div class="edit-area" id="editArea"></div>
+
+  <!-- Экран выбора района (только первый раз или при смене) -->
+  <section class="setup-view" id="setupView">
+    <div class="setup-card">
+      <div class="setup-icon">📍</div>
+      <h2 class="setup-title">Выберите ваш район</h2>
+      <p class="setup-text">
+        Это нужно сделать один раз. Страница запомнит выбор — при следующем визите откроется сразу ваш район.
+        Если не знаете район — уточните у руководителя.
+      </p>
+      <select class="district-select" id="districtSelect">
+        <option value="">— выберите район —</option>
+      </select>
+      <button class="btn-primary btn-large" id="startBtn" disabled>Начать работу</button>
+      <button class="link-btn" id="cancelSetupBtn" hidden>← Вернуться к форме</button>
+    </div>
+  </section>
+
+  <!-- Форма района -->
+  <section class="form-view" id="formView" hidden>
+    <h2 class="district-title" id="districtTitle"></h2>
+
+    <div class="status-section">
+      <label class="field-label">Состояние снега</label>
+      <div class="status-grid" id="statusGrid"></div>
+    </div>
+
+    <div class="comment-section">
+      <label class="field-label" for="commentInput">
+        Комментарий <span class="label-optional">(необязательно)</span>
+      </label>
+      <textarea id="commentInput" class="comment-field" rows="3"
+                placeholder="например: обработан реагентами"></textarea>
+    </div>
+
+    <div class="form-footer">
+      <button class="link-btn" id="changeDistrictBtn">Сменить район</button>
+      <span class="last-submitted" id="lastSubmitted"></span>
+    </div>
+  </section>
+
 </main>
 
-<footer>
-  <button class="secondary" id="resetBtn">Очистить всё</button>
-  <button class="primary" id="submitBtn">Отправить сейчас</button>
+<!-- Кнопка отправки всегда внизу экрана -->
+<footer class="toolbar" id="footer" hidden>
+  <button class="btn-primary btn-large" id="submitBtn" disabled>Отправить</button>
 </footer>
 
 <div class="toast" id="toast"></div>
 
-<script>
-/* ============ НАСТРОЙКИ ============ */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzFr141prHgjtHvSJna86BwKTn2eQzj1uCiv4G8d92Tu6hOH1vqBlFWyz_SFsSqTgn6/exec'; // ⚠️
-
-// Районы
-const DISTRICTS = [
-    'АвД САО',
- 'Аэропорт',
- 'Беговой',
- 'Бескудниковский',
- 'Войковский',
- 'Восточное Дегунино',
- 'Головинский',
- 'Дмитровский',
- 'Западное Дегунино',
- 'Коптево',
- 'Левобережный',
- 'Молжаниновский',
- 'Савеловский',
- 'Сокол',
- 'Тимирязевский',
- 'Ховрино',
- 'Хорошевский'
-];
-
-/* Состояние Снега */
-const STATUS_OPTIONS = ['Нет снега', 'Тонкий слой', 'Есть снег'];
-/* Время отчета */
-const SUBMIT_TIMES = ['00:00', '02:00', '04:00', '06:00'];
-
-const STORAGE_KEY       = 'snow_form_data';
-const LAST_SUBMIT_KEY   = 'snow_last_submit';
-const SELECTED_KEY      = 'snow_selected_district';
-
-/* ============ СОСТОЯНИЕ ============ */
-let selectedDistrict = null;
-
-const saveDot      = document.getElementById('saveDot');
-const saveText     = document.getElementById('saveText');
-const toastEl      = document.getElementById('toast');
-const pickerEl     = document.getElementById('districtPicker');
-const editAreaEl   = document.getElementById('editArea');
-
-function loadFormData() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-  catch { return {}; }
-}
-function saveFormData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-function hasData() {
-  return Object.keys(loadFormData()).length > 0;
-}
-function isFilled(entry) {
-  return entry && (entry.status || entry.comment);
-}
-
-/* ============ СЕТКА РАЙОНОВ ============ */
-function renderPicker() {
-  const data = loadFormData();
-  pickerEl.innerHTML = '';
-  DISTRICTS.forEach(name => {
-    const filled = isFilled(data[name]);
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip'
-      + (name === selectedDistrict ? ' active' : '')
-      + (filled ? ' filled' : '');
-    chip.textContent = name;
-    chip.addEventListener('click', () => selectDistrict(name));
-    pickerEl.appendChild(chip);
-  });
-}
-
-function selectDistrict(name) {
-  selectedDistrict = name;
-  localStorage.setItem(SELECTED_KEY, name);
-  renderPicker();
-  renderEditor();
-}
-
-/* ============ ФОРМА ВЫБРАННОГО РАЙОНА ============ */
-function renderEditor() {
-  if (!selectedDistrict) {
-    editAreaEl.innerHTML = '<div class="edit-placeholder">Выберите район выше</div>';
-    return;
-  }
-  const data = loadFormData()[selectedDistrict] || {};
-
-  editAreaEl.innerHTML = `
-    <div class="edit-title">${selectedDistrict}</div>
-    <div class="form-row">
-      <label>Состояние снега</label>
-      <select id="statusSelect">
-        <option value="">— не выбрано —</option>
-        ${STATUS_OPTIONS.map(o =>
-          `<option value="${o}" ${data.status === o ? 'selected' : ''}>${o}</option>`
-        ).join('')}
-      </select>
+<!-- Модалка подтверждения -->
+<div class="modal-backdrop" id="confirmModal" hidden>
+  <div class="modal">
+    <h3>Отправить данные?</h3>
+    <p class="modal-text">
+      Данные района <strong id="modalDistrict">—</strong> будут отправлены в Google Таблицу.
+      После отправки форма очистится — можно будет заполнить заново для следующего отчёта.
+    </p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modalCancel">Отмена</button>
+      <button class="btn-primary" id="modalConfirm">Отправить</button>
     </div>
-    <div class="form-row">
-      <label>Комментарий</label>
-      <input type="text" id="commentInput"
-             value="${(data.comment || '').replace(/"/g, '&quot;')}"
-             placeholder="необязательно">
-    </div>
-    <div class="hint">Данные сохраняются автоматически</div>
-  `;
+  </div>
+</div>
 
-  document.getElementById('statusSelect').addEventListener('change', onFieldChange);
-  document.getElementById('commentInput').addEventListener('input', onFieldChange);
-}
-
-function onFieldChange() {
-  if (!selectedDistrict) return;
-  const status  = document.getElementById('statusSelect').value;
-  const comment = document.getElementById('commentInput').value;
-
-  const data = loadFormData();
-  if (status || comment) {
-    data[selectedDistrict] = { status, comment };
-  } else {
-    delete data[selectedDistrict];
-  }
-  saveFormData(data);
-  markSaved();
-  renderPicker(); // обновить галочки
-}
-
-function markSaved() {
-  saveDot.className = 'dot saved';
-  saveText.textContent = 'Сохранено ' +
-    new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
-/* ============ ОТПРАВКА ============ */
-async function submitData(manual = false) {
-  if (!hasData()) {
-    if (manual) showToast('Нечего отправлять — форма пуста', 'error');
-    return;
-  }
-  const btn = document.getElementById('submitBtn');
-  btn.disabled = true;
-  saveDot.className = 'dot sending';
-  saveText.textContent = 'Отправка…';
-
-  const data = loadFormData();
-  const districts = DISTRICTS
-    .filter(n => data[n])
-    .map(n => ({
-      district: n,
-      status:   data[n].status || '',
-      comment:  data[n].comment || ''
-    }));
-
-  const payload = { submittedAt: new Date().toISOString(), districts };
-
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    const result = await res.json();
-    if (!result.success) throw new Error(result.error || 'Ошибка сервера');
-
-    localStorage.setItem(LAST_SUBMIT_KEY, new Date().toISOString());
-    localStorage.removeItem(STORAGE_KEY);
-
-    saveDot.className = 'dot';
-    saveText.textContent = 'Отправлено — форма очищена';
-    showToast(`Отправлено ${result.count} районов (партия ${result.batchId})`, 'success');
-
-    // После очистки — выбрать первый район
-    selectedDistrict = DISTRICTS[0];
-    localStorage.setItem(SELECTED_KEY, selectedDistrict);
-    renderPicker();
-    renderEditor();
-  } catch (err) {
-    console.error(err);
-    saveDot.className = 'dot error';
-    saveText.textContent = 'Ошибка отправки';
-    showToast('Ошибка: ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/* ============ ЧАСЫ + ПРОГРЕСС ============ */
-function pad(n) { return String(n).padStart(2, '0'); }
-
-function getPrevAndNextReport() {
-  const now = new Date();
-  const times = SUBMIT_TIMES
-    .map(t => { const [h, m] = t.split(':').map(Number); return { h, m, min: h * 60 + m }; })
-    .sort((a, b) => a.min - b.min);
-  const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-
-  let prev = null, next = null;
-  for (const t of times) {
-    if (t.min <= nowMin) prev = t;
-    else if (next === null) next = t;
-  }
-
-  const prevDate = new Date(now);
-  if (prev === null) {
-    const last = times[times.length - 1];
-    prevDate.setDate(prevDate.getDate() - 1);
-    prevDate.setHours(last.h, last.m, 0, 0);
-  } else prevDate.setHours(prev.h, prev.m, 0, 0);
-
-  const nextDate = new Date(now);
-  if (next === null) {
-    const first = times[0];
-    nextDate.setDate(nextDate.getDate() + 1);
-    nextDate.setHours(first.h, first.m, 0, 0);
-  } else nextDate.setHours(next.h, next.m, 0, 0);
-
-  return { prev: prevDate, next: nextDate };
-}
-
-function tickClock() {
-  const now = new Date();
-  document.getElementById('clockTime').textContent =
-    now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  document.getElementById('clockDate').textContent =
-    now.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
-
-  const { prev, next } = getPrevAndNextReport();
-  const total = next - prev;
-  const elapsed = now - prev;
-  const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
-  document.getElementById('progressBar').style.width = pct.toFixed(2) + '%';
-
-  const diff = next - now;
-  const hh = Math.floor(diff / 3600000);
-  const mm = Math.floor((diff % 3600000) / 60000);
-  const ss = Math.floor((diff % 60000) / 1000);
-  let human;
-  if (hh > 0) human = `${hh} ч ${mm} мин`;
-  else if (mm > 0) human = `${mm} мин ${ss} с`;
-  else human = `${ss} с`;
-
-  document.getElementById('progressLabel').textContent =
-    `До отчёта ${pad(next.getHours())}:${pad(next.getMinutes())} — ${human} (${pct.toFixed(0)}%)`;
-}
-
-/* ============ РАСПИСАНИЕ ============ */
-let lastAttempt = 0;
-function checkSchedule() {
-  const now = Date.now();
-  if (now - lastAttempt < 5 * 60 * 1000) return;
-
-  const lastSubmit = localStorage.getItem(LAST_SUBMIT_KEY);
-  const lastMs = lastSubmit ? new Date(lastSubmit).getTime() : 0;
-
-  const today = new Date();
-  let trigger = null;
-  for (const t of SUBMIT_TIMES) {
-    const [h, m] = t.split(':').map(Number);
-    for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-      const s = new Date(today);
-      s.setDate(s.getDate() - dayOffset);
-      s.setHours(h, m, 0, 0);
-      const sMs = s.getTime();
-      if (sMs <= now && sMs > lastMs && (!trigger || sMs > trigger)) trigger = sMs;
-    }
-  }
-
-  if (trigger !== null && hasData()) {
-    lastAttempt = now;
-    submitData();
-  }
-}
-
-/* ============ UI ============ */
-let toastTimer = null;
-function showToast(msg, type = '') {
-  toastEl.textContent = msg;
-  toastEl.className = 'toast show ' + type;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4000);
-}
-
-/* ============ ЗАПУСК ============ */
-document.getElementById('submitBtn').addEventListener('click', () => submitData(true));
-document.getElementById('resetBtn').addEventListener('click', () => {
-  if (confirm('Очистить все поля всех районов? Данные не будут отправлены.')) {
-    localStorage.removeItem(STORAGE_KEY);
-    selectedDistrict = DISTRICTS[0];
-    localStorage.setItem(SELECTED_KEY, selectedDistrict);
-    renderPicker();
-    renderEditor();
-    saveDot.className = 'dot';
-    saveText.textContent = 'Форма очищена';
-  }
-});
-
-// Инициализация выбранного района
-(function initSelection() {
-  const saved = localStorage.getItem(SELECTED_KEY);
-  if (saved && DISTRICTS.includes(saved)) {
-    selectedDistrict = saved;
-  } else {
-    const data = loadFormData();
-    selectedDistrict = DISTRICTS.find(n => !isFilled(data[n])) || DISTRICTS[0];
-    localStorage.setItem(SELECTED_KEY, selectedDistrict);
-  }
-})();
-
-renderPicker();
-renderEditor();
-
-if (!localStorage.getItem(LAST_SUBMIT_KEY) && !localStorage.getItem(STORAGE_KEY)) {
-  localStorage.setItem(LAST_SUBMIT_KEY, new Date().toISOString());
-}
-
-tickClock();
-setInterval(tickClock, 1000);
-setInterval(checkSchedule, 30 * 1000);
-setTimeout(checkSchedule, 3000);
-</script>
+<script src="js/main.js"></script>
 </body>
 </html>
